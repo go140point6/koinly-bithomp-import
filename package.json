@@ -1,0 +1,10 @@
+{
+  "dependencies": {
+    "commander": "^13.1.0",
+    "csv-parse": "^5.6.0",
+    "csv-stringify": "^6.5.2",
+    "fs": "^0.0.1-security",
+    "inquirer": "^8.2.6",
+    "path": "^0.12.7"
+  }
+}
