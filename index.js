@@ -27,7 +27,7 @@ const path = require('path');
                 console.log("You selected:", selectedFile)
                 console.log("")
                 
-                await parseBithompFile(selectedFile,options.ledger)
+                await parseBithompFile(selectedFile,options.ledger,sharedArrays)
             }
         } catch (error) {
             console.error("Error reading directory:", error)
