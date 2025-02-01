@@ -51,6 +51,7 @@ async function parseBithompFile(inputFile,options,sharedArrays) {
                     const filteredData = records
                         .filter(row => row.Address && row.Address.trim() === address)
                         .map(row => formatRow(row, options, sharedArrays))
+                        .filter(row => row !== null)  // Ensure we only keep non-null rows
 
                     writeCSV(outputFilePath, headers, filteredData)
                 })
@@ -58,7 +59,9 @@ async function parseBithompFile(inputFile,options,sharedArrays) {
             } else {
                 // Single output file
                 const outputFilePath = path.join(outputPath, outputFile)
-                const formattedData = records.map(row => formatRow(row, options, sharedArrays))
+                const formattedData = records
+                    .map(row => formatRow(row, options, sharedArrays))
+                    .filter(row => row !== null)  // Ensure we only keep non-null rows
                 writeCSV(outputFilePath, headers, formattedData)
             }
         })
@@ -67,9 +70,9 @@ async function parseBithompFile(inputFile,options,sharedArrays) {
 
 function formatRow(row, options, sharedArrays) {
     const date = new Date(row['Timestamp ISO']).toISOString()
-    const sentAmount = row.Direction === 'sent' ? row.Amount : ''
+    const sentAmount = row.Direction === 'sent' ? parseFloat(row.Amount) : 0
     let sentCurrency = row.Direction === 'sent' ? row.Currency : ''
-    const receivedAmount = row.Direction === 'received' ? row.Amount : ''
+    const receivedAmount = row.Direction === 'received' ? parseFloat(row.Amount) : 0
     let receivedCurrency = row.Direction === 'received' ? row.Currency : ''
     const currencyIssuer = row['Currency issuer'] || null
     const feeAmount = row['Tx fee'] || ''
@@ -78,6 +81,12 @@ function formatRow(row, options, sharedArrays) {
     const netWorthCurrency = netWorthAmount ? 'USD' : ''
     const description = row.Memo || ''
     const txHash = row.Tx
+
+    // Filter based on USD value for XRP or XAH transactions
+    if ((row.Currency === 'XRP' || row.Currency === 'XAH') && 
+        parseFloat(netWorthAmount) <= 0.004) {  // Filter based on USD value <= 0.004 USD
+        return null  // Skip this row if USD value is too low
+    }
 
     // Handle Koinly IDs
     if (options.ledger === 'XRP') {
