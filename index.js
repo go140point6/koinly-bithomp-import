@@ -15,8 +15,9 @@ const path = require('path');
         const options = parseCLIArgs()
         
         console.log('#####################')
-        console.log('Ledger:', options.ledger)
-        console.log('Koinly Search:', options.koinlySearch)
+        console.log('\u2705 Ledger:', options.ledger)
+        console.log('\u2705 One Main File (ONE) or File per Wallet Address (PER):', options.file)
+        console.log('\u2705 Koinly Search:', options.koinlySearch)
         console.log('#####################')
         console.log('')
 
@@ -27,7 +28,7 @@ const path = require('path');
                 console.log("You selected:", selectedFile)
                 console.log("")
                 
-                await parseBithompFile(selectedFile,options.ledger,sharedArrays)
+                await parseBithompFile(selectedFile,options,sharedArrays)
             }
         } catch (error) {
             console.error("Error reading directory:", error)

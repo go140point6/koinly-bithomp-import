@@ -130,3 +130,4 @@ dist
 .pnp.*
 data/XRP-myAddresses.csv
 data/XAH-myAddresses.csv
+shared/bithomp-parse-backup.js
