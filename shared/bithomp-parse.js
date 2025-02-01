@@ -70,22 +70,48 @@ async function parseBithompFile(inputFile,options,sharedArrays) {
 
 function formatRow(row, options, sharedArrays) {
     const date = new Date(row['Timestamp ISO']).toISOString()
-    const sentAmount = row.Direction === 'sent' ? parseFloat(row.Amount) : 0
-    let sentCurrency = row.Direction === 'sent' ? row.Currency : ''
-    const receivedAmount = row.Direction === 'received' ? parseFloat(row.Amount) : 0
-    let receivedCurrency = row.Direction === 'received' ? row.Currency : ''
+    let sentAmount = 0, receivedAmount = 0
+    let sentCurrency = '', receivedCurrency = ''
+    
+    // Determine sent/received amounts based on direction
+    if (row.Direction === 'sent') {
+        sentAmount = parseFloat(row.Amount)
+        sentCurrency = row.Currency
+    } else if (row.Direction === 'received') {
+        receivedAmount = parseFloat(row.Amount)
+        receivedCurrency = row.Currency
+    } else if (row.Direction === 'dex') {
+        const amount = parseFloat(row.Amount)
+        if (amount < 0) {
+            sentAmount = Math.abs(amount)
+            sentCurrency = row.Currency
+        } else {
+            receivedAmount = amount
+            receivedCurrency = row.Currency
+        }
+    }
+    
     const currencyIssuer = row['Currency issuer'] || null
     const feeAmount = row['Tx fee'] || ''
     const feeCurrency = feeAmount ? row['Tx fee currency'] : ''
+    const netWorthFeeAmount = row['USD Tx Amount equavalent'] || ''
     const netWorthAmount = row['USD Amount equavalent'] || ''
     const netWorthCurrency = netWorthAmount ? 'USD' : ''
     const description = row.Memo || ''
     const txHash = row.Tx
 
     // Filter based on USD value for XRP or XAH transactions
-    if ((row.Currency === 'XRP' || row.Currency === 'XAH') && 
-        parseFloat(netWorthAmount) <= 0.004) {  // Filter based on USD value <= 0.004 USD
+    if ((row.Currency === 'XRP' || row.Currency === 'XAH') &&
+        netWorthAmount && !isNaN(parseFloat(netWorthAmount)) && 
+        Math.abs(parseFloat(netWorthAmount)) <= 0.004) {  // Filter based on USD absolute value = 0.004 USD
         return null  // Skip this row if USD value is too low
+    }
+
+    // Filter based on USD value for XRP or XAH Fee transactions
+    if ((row.Currency === 'XRP' || row.Currency === 'XAH') &&
+        netWorthFeeAmount && !isNaN(parseFloat(netWorthFeeAmount)) && 
+        Math.abs(parseFloat(netWorthFeeAmount)) <= 0.004) {  // Filter based on USD absolute value = 0.004 USD
+    return null  // Skip this row if USD value is too low
     }
 
     // Handle Koinly IDs
@@ -99,7 +125,23 @@ function formatRow(row, options, sharedArrays) {
                 sentCurrency = row.Direction === 'sent' ? token.koinlyid : ''
                 receivedCurrency = row.Direction === 'received' ? token.koinlyid : ''
             } else {
-                console.log(`KoinlyID NOT FOUND for entry: ${row['Amount as Text']} on line ${row['#']}.`)
+                console.log(`KoinlyID NOT FOUND for ledger ${ledger} entry: ${row['Amount as Text']} on line ${row['#']}.`)
+                process.exit(1)
+            }
+        }
+    }
+
+    if (options.ledger === 'XAH') {
+        if (!(row.Currency === 'XAH' && currencyIssuer === null)) {
+            const token = sharedArrays.support.xahlCustomTokens.find((myCustomTokensRow) => {
+                return myCustomTokensRow.counterparty === currencyIssuer && myCustomTokensRow.currency.trim() === row.Currency.trim()
+            })
+
+            if (token) {
+                sentCurrency = row.Direction === 'sent' ? token.koinlyid : ''
+                receivedCurrency = row.Direction === 'received' ? token.koinlyid : ''
+            } else {
+                console.log(`KoinlyID NOT FOUND for ledger ${ledger} entry: ${row['Amount as Text']} on line ${row['#']}.`)
                 process.exit(1)
             }
         }
