@@ -39,7 +39,7 @@ async function parseBithompFile(inputFile,options,sharedArrays) {
 
             const headers = [
                 'Date', 'Sent Amount', 'Sent Currency', 'Received Amount', 'Received Currency',
-                'Fee Amount', 'Fee Currency', 'Net Worth Amount', 'Net Worth Currency', 'Label', 'Description', 'TxHash'
+                'Net Worth Amount', 'Net Worth Currency', 'Label', 'Description', 'TxHash'
             ]
 
             if (options.file === 'PER') {
@@ -70,16 +70,18 @@ async function parseBithompFile(inputFile,options,sharedArrays) {
 
 function formatRow(row, options, sharedArrays) {
     const date = new Date(row['Timestamp ISO']).toISOString()
-    let sentAmount = 0, receivedAmount = 0
+    let sentAmount = '', receivedAmount = ''
     let sentCurrency = '', receivedCurrency = ''
     
     // Determine sent/received amounts based on direction
     if (row.Direction === 'sent') {
         sentAmount = parseFloat(row.Amount)
         sentCurrency = row.Currency
+        receivedCurrency = null // needs to be null for koinlyID check
     } else if (row.Direction === 'received') {
         receivedAmount = parseFloat(row.Amount)
         receivedCurrency = row.Currency
+        sentCurrency = null // needs to be null for koinlyID check
     } else if (row.Direction === 'dex') {
         const amount = parseFloat(row.Amount)
         if (amount < 0) {
@@ -90,28 +92,17 @@ function formatRow(row, options, sharedArrays) {
             receivedCurrency = row.Currency
         }
     }
-    
     const currencyIssuer = row['Currency issuer'] || null
-    const feeAmount = row['Tx fee'] || ''
-    const feeCurrency = feeAmount ? row['Tx fee currency'] : ''
-    const netWorthFeeAmount = row['USD Tx Amount equavalent'] || ''
-    const netWorthAmount = row['USD Amount equavalent'] || ''
+    const netWorthAmount = row['USD Amount equavalent'] ? parseFloat(row['USD Amount equavalent']) : null
     const netWorthCurrency = netWorthAmount ? 'USD' : ''
     const description = row.Memo || ''
     const txHash = row.Tx
+    // What about Issuer Fee and Tx fee? Don't care, currency A sent = currency B receive is all I need.
+    // If A and B are 1:1, and I sent 100 A and get 50 B, that's the cost basis... that half of it went to fee is immaterial.
 
-    // Filter based on USD value for XRP or XAH transactions
-    if ((row.Currency === 'XRP' || row.Currency === 'XAH') &&
-        netWorthAmount && !isNaN(parseFloat(netWorthAmount)) && 
-        Math.abs(parseFloat(netWorthAmount)) <= 0.004) {  // Filter based on USD absolute value = 0.004 USD
-        return null  // Skip this row if USD value is too low
-    }
-
-    // Filter based on USD value for XRP or XAH Fee transactions
-    if ((row.Currency === 'XRP' || row.Currency === 'XAH') &&
-        netWorthFeeAmount && !isNaN(parseFloat(netWorthFeeAmount)) && 
-        Math.abs(parseFloat(netWorthFeeAmount)) <= 0.004) {  // Filter based on USD absolute value = 0.004 USD
-    return null  // Skip this row if USD value is too low
+    // Filter based on USD value for any transactions being to small to matter tax-wise
+    if (netWorthAmount !== null && !isNaN(netWorthAmount) && Math.abs(netWorthAmount) <= 0.004) {
+        return null;  // Skip this row if USD value is too low
     }
 
     // Handle Koinly IDs
@@ -122,8 +113,18 @@ function formatRow(row, options, sharedArrays) {
             })
 
             if (token) {
-                sentCurrency = row.Direction === 'sent' ? token.koinlyid : ''
-                receivedCurrency = row.Direction === 'received' ? token.koinlyid : ''
+                if (row.Direction === 'sent') {
+                    sentCurrency = token.koinlyid
+                } else if (row.Direction === 'received') {
+                    receivedCurrency = token.koinlyid
+                } else if (row.Direction === 'dex') {
+                    // For dex: negative amounts are treated as sent, positive as received.
+                    if (sentAmount < 0) {
+                        sentCurrency = token.koinlyid
+                    } else {
+                        receivedCurrency = token.koinlyid
+                    }
+                }
             } else {
                 console.log(`KoinlyID NOT FOUND for ledger ${ledger} entry: ${row['Amount as Text']} on line ${row['#']}.`)
                 process.exit(1)
@@ -147,7 +148,7 @@ function formatRow(row, options, sharedArrays) {
         }
     }
 
-    return [date, sentAmount, sentCurrency, receivedAmount, receivedCurrency, feeAmount, feeCurrency, netWorthAmount, netWorthCurrency, '', description, txHash]
+    return [date, sentAmount, sentCurrency, receivedAmount, receivedCurrency, netWorthAmount, netWorthCurrency, '', description, txHash]
 }
 
 function writeCSV(outputFilePath, headers, data) {
