@@ -72,33 +72,24 @@ function formatRow(row, options, sharedArrays) {
     const date = new Date(row['Timestamp ISO']).toISOString()
     let sentAmount = '', receivedAmount = ''
     let sentCurrency = '', receivedCurrency = ''
-    
-    // Determine sent/received amounts based on direction
-    if (row.Direction === 'sent') {
-        sentAmount = parseFloat(row.Amount)
-        sentCurrency = row.Currency
-        receivedCurrency = null // needs to be null for koinlyID check
-    } else if (row.Direction === 'received') {
-        receivedAmount = parseFloat(row.Amount)
-        receivedCurrency = row.Currency
-        sentCurrency = null // needs to be null for koinlyID check
-    } else if (row.Direction === 'dex') {
-        const amount = parseFloat(row.Amount)
-        if (amount < 0) {
-            sentAmount = Math.abs(amount)
-            sentCurrency = row.Currency
-        } else {
-            receivedAmount = amount
-            receivedCurrency = row.Currency
-        }
-    }
+
+    const amount = parseFloat(row.Amount) || 0
     const currencyIssuer = row['Currency issuer'] || null
-    const netWorthAmount = row['USD Amount equavalent'] ? parseFloat(row['USD Amount equavalent']) : null
-    const netWorthCurrency = netWorthAmount ? 'USD' : ''
+    const netWorthAmount = row['USD Amount equavalent'] !== '' ? parseFloat(row['USD Amount equavalent']) : null
+    const netWorthCurrency = netWorthAmount !== null ? 'USD' : ''
     const description = row.Memo || ''
     const txHash = row.Tx
     // What about Issuer Fee and Tx fee? Don't care, currency A sent = currency B receive is all I need.
     // If A and B are 1:1, and I sent 100 A and get 50 B, that's the cost basis... that half of it went to fee is immaterial.
+
+    // Determine Sent/Received amounts for sent, received, and dex
+    if (row.Direction === 'sent' || (row.Direction === 'dex' && amount < 0)) {
+        sentAmount = Math.abs(amount);
+        sentCurrency = row.Currency;
+    } else if (row.Direction === 'received' || (row.Direction === 'dex' && amount > 0)) {
+        receivedAmount = amount;
+        receivedCurrency = row.Currency;
+    }
 
     // Filter based on USD value for any transactions being to small to matter tax-wise
     if (netWorthAmount !== null && !isNaN(netWorthAmount) && Math.abs(netWorthAmount) <= 0.004) {
@@ -106,6 +97,27 @@ function formatRow(row, options, sharedArrays) {
     }
 
     // Handle Koinly IDs
+    
+    // if (options.ledger === 'XRP') {
+    //     sentCurrency = getKoinlyId(sharedArrays.support.xrplCustomTokens, row, sentCurrency, receivedCurrency, currencyIssuer);
+    //     receivedCurrency = getKoinlyId(sharedArrays.support.xrplCustomTokens, row, receivedCurrency, sentCurrency, currencyIssuer);
+    // } else if (options.ledger === 'XAH') {
+    //     sentCurrency = getKoinlyId(sharedArrays.support.xahlCustomTokens, row, sentCurrency, receivedCurrency, currencyIssuer);
+    //     receivedCurrency = getKoinlyId(sharedArrays.support.xahlCustomTokens, row, receivedCurrency, sentCurrency, currencyIssuer);
+    // }
+
+    // function getKoinlyId(tokenArray, row, sentCurrency, secondaryCurrency, currencyIssuer) {
+    //     if (!(row.Currency === row.ledger && currencyIssuer === null)) {
+    //         const token = tokenArray.find((tokenRow) => tokenRow.counterparty === currencyIssuer && tokenRow.currency.trim() === row.Currency.trim())
+    //         if (token) {
+    //             return token.koinlyid
+    //         } else {
+    //             throw new Error(`\u26A0 KoinlyID NOT FOUND for ledger ${options.ledger} entry: ${row['Amount as Text']} on line ${row['#']}.`)
+    //         }
+    //     }
+    //     return primaryCurrency
+    // }
+
     if (options.ledger === 'XRP') {
         if (!(row.Currency === 'XRP' && currencyIssuer === null)) {
             const token = sharedArrays.support.xrplCustomTokens.find((myCustomTokensRow) => {
@@ -156,7 +168,7 @@ function writeCSV(outputFilePath, headers, data) {
         if (err) throw err
         fs.writeFile(outputFilePath, output, 'utf8', err => {
             if (err) throw err
-            console.log(`✅ Formatted CSV written to ${outputFilePath}`)
+            console.log(`\u2705 Formatted CSV written to ${outputFilePath}`)
         })
     })
 }

@@ -7,50 +7,58 @@ const path = require('path');
 
 (async () => {
     try {
+        console.log("\n\u{1F504} Initializing script...\n")
+
         const main = await createMainArray()
         sharedArrays.support = await createSupportArrays()
 
-        const directoryPath = path.join(__dirname, 'input')
+        //const directoryPath = path.join(__dirname, 'input')
 
         const options = parseCLIArgs()
         
-        console.log('#####################')
+        console.log('\n=====================')
         console.log('\u2705 Ledger:', options.ledger)
         console.log('\u2705 One Main File (ONE) or File per Wallet Address (PER):', options.file)
         console.log('\u2705 Koinly Search:', options.koinlySearch)
-        console.log('#####################')
-        console.log('')
+        console.log('=====================\n')
 
-        try {
-            const selectedFile = await chooseFile(directoryPath)
-            if (selectedFile) {
-                console.log("")
-                console.log("You selected:", selectedFile)
-                console.log("")
-                
-                await parseBithompFile(selectedFile,options,sharedArrays)
-            }
-        } catch (error) {
-            console.error("Error reading directory:", error)
+        // Get file path
+        const directoryPath = path.join(__dirname, 'input')
+        
+        const selectedFile = await chooseFile(directoryPath)
+
+        if (!selectedFile) {
+            throw new Error("No file selected.")
         }
 
-        // const options = parseCLIArgs()
+        console.log("\n\u{1F4C2} You selected:", selectedFile, "\n")
 
-        // console.log('Account:', options.account);
-        // console.log('Ledger:', options.ledger);
-        // console.log('File mode:', options.file);
-        // console.log('Koinly Search:', options.koinlySearch);
+        // Process the selected file
+        await parseBithompFile(selectedFile, options, sharedArrays)
 
-        // // Example of handling based on account type
-        // if (options.account === 'LIST') {
-        //     console.log('Processing in LIST mode...');
-        // } else {
-        //     console.log('Processing in MULTI mode...');
-        // }
-
-
+        console.log("\n\u2705 Process completed successfully.\n")
 
     } catch (error) {
-        console.error('An error occurred while creating arrays: ', error)
+        console.error("\n\u274C An error occurred:", error.message || error)
+        console.error(error.stack)
+        process.exit(1)
     }
 })()
+
+        // try {
+        //     const selectedFile = await chooseFile(directoryPath)
+        //     if (selectedFile) {
+        //         console.log("")
+        //         console.log("You selected:", selectedFile)
+        //         console.log("")
+                
+        //         await parseBithompFile(selectedFile,options,sharedArrays)
+        //     }
+        // } catch (error) {
+        //     console.error("Error reading directory:", error)
+        // }
+
+//     } catch (error) {
+//         console.error('An error occurred while creating arrays: ', error)
+//     }
+// })()
