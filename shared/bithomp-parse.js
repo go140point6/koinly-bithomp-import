@@ -83,6 +83,9 @@ function formatRow(row, options, sharedArrays) {
     // If A and B are 1:1, and I sent 100 A and get 50 B, that's the cost basis... that half of it went to fee is immaterial.
 
     // Determine Sent/Received amounts for sent, received, and dex
+    // BUG - THIS LOGIC IS WRONG, IF AMOUNT IS POSITIVE, ADD XRP TO WALLET
+    // IF NEGATIVE, REMOVE FROM WALLET... REGARDLESS OF DIRECTION.
+    // SEE NFTokenAcceptOffer, find both send and receive directions
     if (row.Direction === 'sent' || (row.Direction === 'dex' && amount < 0)) {
         sentAmount = Math.abs(amount);
         sentCurrency = row.Currency;
@@ -138,7 +141,7 @@ function formatRow(row, options, sharedArrays) {
                     }
                 }
             } else {
-                console.log(`KoinlyID NOT FOUND for ledger ${ledger} entry: ${row['Amount as Text']} on line ${row['#']}.`)
+                console.log(`\u274C KoinlyID NOT FOUND for ${options.ledger} ledger entry: ${row['Amount as Text']} on line ${row['#']}.`)
                 process.exit(1)
             }
         }
@@ -154,7 +157,7 @@ function formatRow(row, options, sharedArrays) {
                 sentCurrency = row.Direction === 'sent' ? token.koinlyid : ''
                 receivedCurrency = row.Direction === 'received' ? token.koinlyid : ''
             } else {
-                console.log(`KoinlyID NOT FOUND for ledger ${ledger} entry: ${row['Amount as Text']} on line ${row['#']}.`)
+                console.log(`KoinlyID NOT FOUND for ${options.ledger} ledger entry: ${row['Amount as Text']} on line ${row['#']}.`)
                 process.exit(1)
             }
         }

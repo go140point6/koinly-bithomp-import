@@ -36,7 +36,7 @@ const path = require('path');
         // Process the selected file
         await parseBithompFile(selectedFile, options, sharedArrays)
 
-        console.log("\n\u2705 Process completed successfully.\n")
+        //console.log("\n\u2705 Process completed successfully.\n")
 
     } catch (error) {
         console.error("\n\u274C An error occurred:", error.message || error)
