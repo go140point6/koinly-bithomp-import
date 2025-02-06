@@ -40,25 +40,6 @@ const path = require('path');
 
     } catch (error) {
         console.error("\n\u274C An error occurred:", error.message || error)
-        console.error(error.stack)
         process.exit(1)
     }
 })()
-
-        // try {
-        //     const selectedFile = await chooseFile(directoryPath)
-        //     if (selectedFile) {
-        //         console.log("")
-        //         console.log("You selected:", selectedFile)
-        //         console.log("")
-                
-        //         await parseBithompFile(selectedFile,options,sharedArrays)
-        //     }
-        // } catch (error) {
-        //     console.error("Error reading directory:", error)
-        // }
-
-//     } catch (error) {
-//         console.error('An error occurred while creating arrays: ', error)
-//     }
-// })()

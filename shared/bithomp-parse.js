@@ -1,30 +1,16 @@
 const fs = require('fs');
+const path = require('path');
 const { parse } = require('csv-parse');
 const { stringify } = require('csv-stringify');
-const path = require('path');
 const { getFilenameTimestamp } = require('../utils/granularDate');
 const { createDirectoryIfNotExists } = require('../utils/createDirectory');
-const { findAddresses } = require('./findAddresses');
+const { sanitizeMemo } = require('../utils/sanitizeMemo');
+ 
 
-async function parseBithompFile(inputFile,options,sharedArrays) {
-
+async function parseBithompFile(inputFile, options, sharedArrays) {
     const outputPath = path.join(__dirname, '../output')
     createDirectoryIfNotExists(outputPath)
     const currentDate = getFilenameTimestamp()
-
-    let addresses = []
-
-    if (options.file === 'PER') {
-        console.log("You want each address found in your bithomp .csv to be separate files:")
-        try {
-            addresses = await findAddresses(inputFile)
-        } catch (error) {
-            console.error('Failed to extract addresses: ', error)
-            return
-        }
-    } else {
-        var outputFile = `${options.ledger}-koinlyimport-${currentDate}.csv`  
-    }
 
     fs.readFile(inputFile, 'utf8', (err, data) => {
         if (err) throw err
@@ -34,38 +20,92 @@ async function parseBithompFile(inputFile,options,sharedArrays) {
             data = data.slice(1)
         }
 
-        parse(data, { columns: true, skip_empty_lines: true, trim: true, relax_quotes: true }, (err, records) => {
-            if (err) throw err
+        // Sanitize .csv inputs
+        const rows = data.split('\n').map((row, rowNumber) => {
+            const columns = row.split('","'); // Split by "," while keeping quoted fields intact
+        
+            // Ensure this row has enough columns (skip headers and invalid rows)
+            if (columns.length > 20) {
+                let memoField = columns[20]
+
+                columns[20] = sanitizeMemo(memoField, rowNumber)
+        
+                // // Problematic pattern checks
+                // const hasExtraLeadingQuotes = memoField.startsWith('""');
+                // const hasUnescapedQuotes = /[^"]"[^"]/.test(memoField); // Detect unescaped quotes
+                // const hasUnbalancedQuotes = (memoField.match(/"/g) || []).length % 2 !== 0;
+        
+                // // Sanitize the Memo field if problematic patterns are detected
+                // if (hasExtraLeadingQuotes || hasUnescapedQuotes || hasUnbalancedQuotes) {
+                //     console.warn(`Sanitizing problematic Memo field at row ${rowNumber}: ${memoField}`);
+                //     columns[20] = ''; // Replace with an empty string
+                // }
+            }
+        
+            // Check column count after reassembling the row
+            const reassembledRow = columns.join('","') // Reassemble the row        
+            return reassembledRow
+        })
+        
+        // Rejoin rows into a single CSV string
+        const sanitizedData = rows.join('\n')
+        
+        // Parse the CSV file only once
+        parse(sanitizedData, { 
+            columns: true, 
+            skip_empty_lines: true, 
+            trim: true, 
+            relax_quotes: true, 
+            relax_column_count: true, // Allows rows with unexpected column counts
+            escape: '\\',             // Handles potential escape sequences
+            delimiter: ',',           // Ensure correct field splitting
+        }, (err, records) => {
+            if (err) {
+                console.error('Error parsing CSV:', err.message)
+                return; // Handle the error gracefully
+            }
+
+            console.log(`\u2705 Successfully parsed ${records.length} records.`)
+
+            // Extract unique addresses if necessary
+            let addresses = []
+            if (options.file === 'PER') {
+                addresses = Array.from(new Set(records.map(row => row.Address?.trim()).filter(Boolean)))
+                
+                console.log(`\u2705 Found ${addresses.length} unique addresses.`)
+            }
 
             const headers = [
                 'Date', 'Sent Amount', 'Sent Currency', 'Received Amount', 'Received Currency',
                 'Net Worth Amount', 'Net Worth Currency', 'Label', 'Description', 'TxHash'
-            ]
+            ];
 
             if (options.file === 'PER') {
-                // Iterate over each unique address and create separate files
-                addresses.forEach((address) => {
+                // Create separate files for each address
+                addresses.forEach(address => {
                     const outputFile = `${options.ledger}-${address}-${currentDate}.csv`
                     const outputFilePath = path.join(outputPath, outputFile)
 
                     const filteredData = records
-                        .filter(row => row.Address && row.Address.trim() === address)
+                        .filter(row => row.Address?.trim() === address)
                         .map(row => formatRow(row, options, sharedArrays))
-                        .filter(row => row !== null)  // Ensure we only keep non-null rows
+                        .filter(row => row !== null) // Ensure we only keep non-null rows
 
                     writeCSV(outputFilePath, headers, filteredData)
-                })
-
+                });
             } else {
                 // Single output file
+                const outputFile = `${options.ledger}-koinlyimport-${currentDate}.csv`
                 const outputFilePath = path.join(outputPath, outputFile)
+
                 const formattedData = records
                     .map(row => formatRow(row, options, sharedArrays))
-                    .filter(row => row !== null)  // Ensure we only keep non-null rows
+                    .filter(row => row !== null); // Ensure we only keep non-null rows
+
                 writeCSV(outputFilePath, headers, formattedData)
             }
-        })
-    })
+        });
+    });
 }
 
 function formatRow(row, options, sharedArrays) {
@@ -79,85 +119,34 @@ function formatRow(row, options, sharedArrays) {
     const netWorthCurrency = netWorthAmount !== null ? 'USD' : ''
     const description = row.Memo || ''
     const txHash = row.Tx
-    // What about Issuer Fee and Tx fee? Don't care, currency A sent = currency B receive is all I need.
-    // If A and B are 1:1, and I sent 100 A and get 50 B, that's the cost basis... that half of it went to fee is immaterial.
 
-    // Determine Sent/Received amounts for sent, received, and dex
-    // BUG - THIS LOGIC IS WRONG, IF AMOUNT IS POSITIVE, ADD XRP TO WALLET
-    // IF NEGATIVE, REMOVE FROM WALLET... REGARDLESS OF DIRECTION.
-    // SEE NFTokenAcceptOffer, find both send and receive directions
-    if (row.Direction === 'sent' || (row.Direction === 'dex' && amount < 0)) {
-        sentAmount = Math.abs(amount);
-        sentCurrency = row.Currency;
-    } else if (row.Direction === 'received' || (row.Direction === 'dex' && amount > 0)) {
-        receivedAmount = amount;
-        receivedCurrency = row.Currency;
+    if (amount < 0) {
+        sentAmount = Math.abs(amount)
+        sentCurrency = row.Currency
+    } else if (amount > 0) {
+        receivedAmount = amount
+        receivedCurrency = row.Currency
     }
 
-    // Filter based on USD value for any transactions being to small to matter tax-wise
-    if (netWorthAmount !== null && !isNaN(netWorthAmount) && Math.abs(netWorthAmount) <= 0.004) {
-        return null;  // Skip this row if USD value is too low
+    if (netWorthAmount !== null && Math.abs(netWorthAmount) <= 0.004) {
+        return null
     }
-
-    // Handle Koinly IDs
-    
-    // if (options.ledger === 'XRP') {
-    //     sentCurrency = getKoinlyId(sharedArrays.support.xrplCustomTokens, row, sentCurrency, receivedCurrency, currencyIssuer);
-    //     receivedCurrency = getKoinlyId(sharedArrays.support.xrplCustomTokens, row, receivedCurrency, sentCurrency, currencyIssuer);
-    // } else if (options.ledger === 'XAH') {
-    //     sentCurrency = getKoinlyId(sharedArrays.support.xahlCustomTokens, row, sentCurrency, receivedCurrency, currencyIssuer);
-    //     receivedCurrency = getKoinlyId(sharedArrays.support.xahlCustomTokens, row, receivedCurrency, sentCurrency, currencyIssuer);
-    // }
-
-    // function getKoinlyId(tokenArray, row, sentCurrency, secondaryCurrency, currencyIssuer) {
-    //     if (!(row.Currency === row.ledger && currencyIssuer === null)) {
-    //         const token = tokenArray.find((tokenRow) => tokenRow.counterparty === currencyIssuer && tokenRow.currency.trim() === row.Currency.trim())
-    //         if (token) {
-    //             return token.koinlyid
-    //         } else {
-    //             throw new Error(`\u26A0 KoinlyID NOT FOUND for ledger ${options.ledger} entry: ${row['Amount as Text']} on line ${row['#']}.`)
-    //         }
-    //     }
-    //     return primaryCurrency
-    // }
 
     if (options.ledger === 'XRP') {
         if (!(row.Currency === 'XRP' && currencyIssuer === null)) {
-            const token = sharedArrays.support.xrplCustomTokens.find((myCustomTokensRow) => {
-                return myCustomTokensRow.counterparty === currencyIssuer && myCustomTokensRow.currency.trim() === row.Currency.trim()
-            })
+            const token = sharedArrays.support.xrplCustomTokens.find(myCustomTokensRow =>
+                myCustomTokensRow.counterparty === currencyIssuer &&
+                myCustomTokensRow.currency.trim() === row.Currency.trim()
+            );
 
             if (token) {
-                if (row.Direction === 'sent') {
+                if (amount < 0) {
                     sentCurrency = token.koinlyid
-                } else if (row.Direction === 'received') {
+                } else if (amount > 0) {
                     receivedCurrency = token.koinlyid
-                } else if (row.Direction === 'dex') {
-                    // For dex: negative amounts are treated as sent, positive as received.
-                    if (sentAmount < 0) {
-                        sentCurrency = token.koinlyid
-                    } else {
-                        receivedCurrency = token.koinlyid
-                    }
                 }
             } else {
-                console.log(`\u274C KoinlyID NOT FOUND for ${options.ledger} ledger entry: ${row['Amount as Text']} on line ${row['#']}.`)
-                process.exit(1)
-            }
-        }
-    }
-
-    if (options.ledger === 'XAH') {
-        if (!(row.Currency === 'XAH' && currencyIssuer === null)) {
-            const token = sharedArrays.support.xahlCustomTokens.find((myCustomTokensRow) => {
-                return myCustomTokensRow.counterparty === currencyIssuer && myCustomTokensRow.currency.trim() === row.Currency.trim()
-            })
-
-            if (token) {
-                sentCurrency = row.Direction === 'sent' ? token.koinlyid : ''
-                receivedCurrency = row.Direction === 'received' ? token.koinlyid : ''
-            } else {
-                console.log(`KoinlyID NOT FOUND for ${options.ledger} ledger entry: ${row['Amount as Text']} on line ${row['#']}.`)
+                console.error(`\u274C KoinlyID NOT FOUND for ${options.ledger} ledger entry: ${row['Amount as Text']} on line ${row['#']}.`)
                 process.exit(1)
             }
         }
@@ -178,4 +167,4 @@ function writeCSV(outputFilePath, headers, data) {
 
 module.exports = {
     parseBithompFile
-}
+};
