@@ -128,8 +128,3 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
-data/XRP-myAddresses.csv
-data/XAH-myAddresses.csv
-shared/bithomp-parse-backup.js
-input/xrpl-3-accounts-20240101-20250203.csv
-shared/bithomp-parse-v2.js
