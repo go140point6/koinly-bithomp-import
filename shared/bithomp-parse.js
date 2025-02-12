@@ -29,17 +29,6 @@ async function parseBithompFile(inputFile, options, sharedArrays) {
                 let memoField = columns[20]
 
                 columns[20] = sanitizeMemo(memoField, rowNumber)
-        
-                // // Problematic pattern checks
-                // const hasExtraLeadingQuotes = memoField.startsWith('""');
-                // const hasUnescapedQuotes = /[^"]"[^"]/.test(memoField); // Detect unescaped quotes
-                // const hasUnbalancedQuotes = (memoField.match(/"/g) || []).length % 2 !== 0;
-        
-                // // Sanitize the Memo field if problematic patterns are detected
-                // if (hasExtraLeadingQuotes || hasUnescapedQuotes || hasUnbalancedQuotes) {
-                //     console.warn(`Sanitizing problematic Memo field at row ${rowNumber}: ${memoField}`);
-                //     columns[20] = ''; // Replace with an empty string
-                // }
             }
         
             // Check column count after reassembling the row
@@ -128,21 +117,30 @@ function formatRow(row, options, sharedArrays) {
         receivedCurrency = row.Currency
     }
 
-    if (netWorthAmount !== null && Math.abs(netWorthAmount) <= 0.004) {
+    // Get rid of dust transactions of XRP/XAH, plus a special case of EVR on the XAHL side)
+    if ((row.Currency === options.ledger || currencyIssuer === 'rEvernodee8dJLaFsujS6q1EiXvZYmHXr8') && netWorthAmount !== null && Math.abs(netWorthAmount) < 0.01) {
         return null
     }
 
-    if (options.ledger === 'XRP') {
-        if (!(row.Currency === 'XRP' && currencyIssuer === null)) {
-            const token = sharedArrays.support.xrplCustomTokens.find(myCustomTokensRow =>
+    // Second special case for EVR
+    if (currencyIssuer === 'rEvernodee8dJLaFsujS6q1EiXvZYmHXr8' && (receivedAmount === 0.05 || sentAmount === 0.05)) {
+        return null
+    }
+
+    const customTokensTable = sharedArrays.support[options.ledger === 'XAH' ? 'xahlCustomTokens' : 'xrplCustomTokens']
+
+    if (!(row.Currency === options.ledger && currencyIssuer === null)) {
+        const token = customTokensTable.find(myCustomTokensRow =>
                 myCustomTokensRow.counterparty === currencyIssuer &&
                 myCustomTokensRow.currency.trim() === row.Currency.trim()
-            );
+            )
 
             if (token) {
                 if (amount < 0) {
                     sentCurrency = token.koinlyid
+                    receivedCurrency = null
                 } else if (amount > 0) {
+                    sentCurrency = null
                     receivedCurrency = token.koinlyid
                 }
             } else {
@@ -150,7 +148,6 @@ function formatRow(row, options, sharedArrays) {
                 process.exit(1)
             }
         }
-    }
 
     return [date, sentAmount, sentCurrency, receivedAmount, receivedCurrency, netWorthAmount, netWorthCurrency, '', description, txHash]
 }

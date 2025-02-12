@@ -2,9 +2,12 @@
   "dependencies": {
     "commander": "^13.1.0",
     "csv-parse": "^5.6.0",
+    "csv-parser": "^3.2.0",
     "csv-stringify": "^6.5.2",
+    "csv-writer": "^1.6.0",
     "fs": "^0.0.1-security",
     "inquirer": "^8.2.6",
+    "json2csv": "^6.0.0-alpha.2",
     "path": "^0.12.7"
   }
 }
